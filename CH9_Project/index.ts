@@ -43,7 +43,7 @@ export class Weather implements WeatherInterface {
   }
 
   private getOpenApiKey() {
-    const API_KEY = process.env.NEXT_PUBLIC_OPEN_API_KEY;
+    const API_KEY = process.env.OPEN_API_KEY;
 
     if (API_KEY === undefined) {
       throw new Error("KEY IS NOT AVAILABLE");
@@ -134,6 +134,9 @@ export class Weather implements WeatherInterface {
     url.searchParams.append("ServiceKey", this.api_key);
     url.searchParams.append("dataType", "JSON");
 
+    /**
+     * 어제 날짜의 23시 기준으로 요청하여 오늘 날짜의 단기예보를 가져옴
+     */
     url.searchParams.append(
       "base_date",
       current_datetime.add(-1, "days").format("YYYYMMDD")
@@ -152,7 +155,10 @@ export class Weather implements WeatherInterface {
     return data.response.body?.items.item ?? [];
   }
 
-  /** 단기예보 : 3일치 */
+  /**
+   * 단기예보 : 3일치
+   * 가장 많은 데이터를 주지만 정확도가 낮아 초단기 실황으로 최근 6시간 덮어씌울 데이터
+   */
   async fetchShortTermWeatherForecast() {
     const url = new URL(
       "http://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst"
@@ -198,8 +204,10 @@ export class Weather implements WeatherInterface {
     url.searchParams.append("ServiceKey", this.api_key);
     url.searchParams.append("dataType", "JSON");
 
-    const basedate = dayjs().tz().add(-1, "hours").format("YYYYMMDD");
-    const basetime = dayjs().tz().add(-1, "hours").format("HHmm");
+    const base_datetime = dayjs().tz().add(-1, "hours");
+    const basedate = base_datetime.format("YYYYMMDD");
+    const basetime = base_datetime.format("HHmm");
+
     url.searchParams.append("base_date", basedate);
     url.searchParams.append("base_time", basetime);
 
@@ -235,9 +243,15 @@ export class WeatherAdapter implements WeatherAdapterInterface {
   /** 당일 단기예보에서 최저기온, 최고기온을 가진 아이템을 찾아 그 값을 반환 */
   async todayTemperature() {
     const result = await this.weather.fetchTodayShortTermWeatherForecast();
-    const min = result.filter((v) => v.category === "TMN").at(0)!.fcstValue;
-    const max = result.filter((v) => v.category === "TMX").at(0)!.fcstValue;
-    return { min: parseFloat(min), max: parseFloat(max) };
+
+    const filtered_list = result.filter(
+      (v) => v.category === "TMN" || v.category === "TMX"
+    );
+    const value_list = filtered_list.map((v) => {
+      return parseFloat(v.fcstValue);
+    });
+
+    return { min: Math.min(...value_list), max: Math.max(...value_list) };
   }
 
   /**
